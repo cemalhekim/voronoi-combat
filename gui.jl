@@ -1,3 +1,28 @@
+"""
+Purpose:
+The graphical interface to:
+
+Show the diagram,
+
+Handle clicks,
+
+Run the game,
+
+Display scores.
+Contents:
+
+using GLMakie or Gtk.jl (your choice)
+
+Figure, Axis setup
+
+Event handling: clicking to add points via insert_point!
+
+Drawing Voronoi cells with Poly() or lines!
+
+Highlighting the current player
+
+Endgame detection and winner announcement
+"""
 using GLMakie
 
 GLMakie.activate!(vsync=false, visible=true)
