@@ -55,3 +55,5 @@ function start_game()
     #Darstellen des Plottes
     display(fig)
 end
+
+start_game()

@@ -1,281 +1,205 @@
-"""
-Purpose:
-Algorithmic logic for incremental insertion and edge flipping.
-Contents:
-
-check_umkreis(e::Kante)::Bool
-
-flip!(e::Kante, D::Delaunay)
-
-recursive_flip!(e::Kante, D::Delaunay)
-
-find_triangle(p::Point, D::Delaunay)
-
-insert_point!(p::Point, D::Delaunay)
-"""
-
 include("geometry.jl")
-include("dcel.jl")
 
 using LinearAlgebra
 
-"""
-Check whether the point opposite to edge e violates the Delaunay condition.
-Returns true if the point is inside the circumcircle.
-"""
-function check_umkreis(e::Kante)::Bool
-    a = e.origin
-    b = e.next.origin
-    c = e.prev.origin
-    d = e.twin.next.origin
+function insert_point!(p::Point, delaunay::Delaunay)
+	# 1) Noktanın hangi üçgenin içinde olduğunu bul
+	triangle = find_triangle(p, delaunay)
 
-    M = [
-        a.x a.y a.x^2 + a.y^2 1;
-        b.x b.y b.x^2 + b.y^2 1;
-        c.x c.y c.x^2 + c.y^2 1;
-        d.x d.y d.x^2 + d.y^2 1
-    ]
+	# 2) O üçgenin köşelerini kaydet
+	e1 = triangle.edge
+	e2 = e1.next
+	e3 = e2.next
+	a, b, c = e1.origin, e2.origin, e3.origin
 
-    detM = det(M)
+	# 3) Eski üçgeni sil
+	delete!(delaunay.triangles, triangle)
 
-    return detM > 0
+	# 4) Yeni 3 üçgen oluştur
+	# 1. üçgen: a, b, p
+	new_e1ab = Edge(a, nothing, nothing, nothing, nothing)
+	new_e2ab = Edge(b, nothing, nothing, nothing, nothing)
+	new_e3ab = Edge(p, nothing, nothing, nothing, nothing)
+	new_e1ab.next = new_e2ab ; new_e2ab.previous = new_e1ab
+	new_e2ab.next = new_e3ab ; new_e3ab.previous = new_e2ab
+	new_e3ab.next = new_e1ab ; new_e1ab.previous = new_e3ab
+	new_triangle_ab = Triangle(new_e1ab)
+	new_e1ab.face = new_triangle_ab ; new_e2ab.face = new_triangle_ab ; new_e3ab.face = new_triangle_ab 
+	# 2. üçgen: b, c, p
+	new_e1bc = Edge(b, nothing, nothing, nothing, nothing)
+	new_e2bc = Edge(c, nothing, nothing, nothing, nothing)
+	new_e3bc = Edge(p, nothing, nothing, nothing, nothing)
+	new_e1bc.next = new_e2bc ; new_e2bc.previous = new_e1bc
+	new_e2bc.next = new_e3bc ; new_e3bc.previous = new_e2bc
+	new_e3bc.next = new_e1bc ; new_e1bc.previous = new_e3bc
+	new_triangle_bc = Triangle(new_e1bc) ; 
+	new_e1bc.face = new_triangle_bc ; new_e2bc.face = new_triangle_bc ; new_e3bc.face = new_triangle_bc
+	# 3. üçgen: c, a, p
+	new_e1ca = Edge(c, nothing, nothing, nothing, nothing)
+	new_e2ca = Edge(a, nothing, nothing, nothing, nothing)
+	new_e3ca = Edge(p, nothing, nothing, nothing, nothing)
+	new_e1ca.next = new_e2ca ; new_e2ca.previous = new_e1ca
+	new_e2ca.next = new_e3ca ; new_e3ca.previous = new_e2ca
+	new_e3ca.next = new_e1ca ; new_e1ca.previous = new_e3ca
+	new_triangle_ca = Triangle(new_e1ca) ;
+	new_e1ca.face = new_triangle_ca ; new_e2ca.face = new_triangle_ca ; new_e3ca.face = new_triangle_ca
+
+	# 5) Yeni üçgeni ekle
+	push!(delaunay.triangles, new_triangle_ab, new_triangle_bc, new_triangle_ca)
+	
+	# 6) Yeni üçgenlerin kenarlarını birbirine bağla
+	connect_reflect!(delaunay.triangles)
+
+	recursive_flip!(new_e1ab, delaunay)
+	recursive_flip!(new_e1bc, delaunay)
+	recursive_flip!(new_e1ca, delaunay)
+
 end
 
-"""
-Flip the edge e in the Delaunay triangulation D.
-This operation replaces e with the new diagonal connecting the opposite points.
-"""
-function flip!(e::Kante, D::Delaunay)
-    # Get the triangles on both sides
-    tri1 = e.face
-    tri2 = e.twin.face
-
-    # Remove old triangles
-    delete!(D.triangles, tri1)
-    delete!(D.triangles, tri2)
-
-    # Identify the four corner points
-    a = e.next.origin
-    b = e.prev.origin
-    c = e.origin
-    d = e.twin.next.origin
-
-    # Build new edges
-    # New diagonal
-    diag = Kante(d, nothing, nothing, nothing, nothing)
-    diag_twin = Kante(a, diag, nothing, nothing, nothing)
-    diag.twin = diag_twin
-
-    # Triangle 1 (a,c,d)
-    e1 = Kante(a, nothing, nothing, nothing, nothing)
-    e2 = Kante(c, nothing, nothing, nothing, nothing)
-    # diag from d to a is already created
-
-    # Link triangle 1 edges
-    e1.next = e2
-    e2.next = diag
-    diag.next = e1
-
-    e1.prev = diag
-    e2.prev = e1
-    diag.prev = e2
-
-    # Triangle 2 (d,c,b)
-    e3 = Kante(d, nothing, nothing, nothing, nothing)
-    e4 = Kante(b, nothing, nothing, nothing, nothing)
-    # diag_twin from a to d is already created
-
-    # Link triangle 2 edges
-    e3.next = e4
-    e4.next = diag_twin
-    diag_twin.next = e3
-
-    e3.prev = diag_twin
-    e4.prev = e3
-    diag_twin.prev = e4
-
-    # Create triangle objects
-    tri_new1 = Dreieck(e1)
-    tri_new2 = Dreieck(e3)
-
-    # Assign face pointers
-    for ed in [e1, e2, diag]
-        ed.face = tri_new1
-    end
-    for ed in [e3, e4, diag_twin]
-        ed.face = tri_new2
+function check_umkreis(e::Edge)
+    if e.reflect === nothing
+        return false
     end
 
-    # Reconnect twins:
-    # e1 (a->c) twin of e.prev.twin, if exists
-    if e.prev !== nothing && e.prev.twin !== nothing
-        e1.twin = e.prev.twin
-        e1.twin.twin = e1
-    else
-        e1.twin = nothing
-    end
+    triangle = e.face::Triangle  # e kenarı üçgeni tanımlar
+    center = circumcenter(triangle)
+    radius = distance(center, e.origin)
 
-    # e2 (c->d) twin of e.twin.next.twin, if exists
-    if e.twin.next !== nothing && e.twin.next.twin !== nothing
-        e2.twin = e.twin.next.twin
-        e2.twin.twin = e2
-    else
-        e2.twin = nothing
-    end
-
-    # e3 (d->c) twin of e.next.twin, if exists
-    if e.next !== nothing && e.next.twin !== nothing
-        e3.twin = e.next.twin
-        e3.twin.twin = e3
-    else
-        e3.twin = nothing
-    end
-
-    # e4 (c->b) twin of e.twin.prev.twin, if exists
-    if e.twin.prev !== nothing && e.twin.prev.twin !== nothing
-        e4.twin = e.twin.prev.twin
-        e4.twin.twin = e4
-    else
-        e4.twin = nothing
-    end
-
-    # Add new triangles
-    push!(D.triangles, tri_new1)
-    push!(D.triangles, tri_new2)
+    d_ref = e.reflect.origin
+    return distance(center, d_ref) < radius
 end
 
+function flip!(e::Edge, delaunay::Delaunay)
+	# Kenarın yansıma kenarını al
+	e_reflect = e.reflect
+	if e_reflect === nothing
+		error("Kenarin yansima kenari yok.")
+	end 
 
-"""
-Recursively enforce the Delaunay condition along the new edges.
-"""
-function recursive_flip!(e::Kante, D::Delaunay)
-    if e === nothing || e.twin === nothing
-        return
-    end
-    if check_umkreis(e)
-        # Save references to edges that will be adjacent to the new diagonal
-        e_twin_next = e.twin.next
-        e_twin_prev = e.twin.prev
+	#Karşı köşeleri bulalım.
+	a = e.next.next.origin
+	d = e_reflect.next.next.origin
 
-        flip!(e, D)
+	# Eskiyi silelim
+	delete!(delaunay.triangles, e.face)
+	delete!(delaunay.triangles, e_reflect.face)
 
-        recursive_flip!(e_twin_next, D)
-        recursive_flip!(e_twin_prev, D)
-    end
+	# Yeni kenarları oluşturalım (a-d ortak)
+	e1 = Edge(a, nothing, nothing, nothing, nothing)
+	e2 = Edge(e.origin, nothing, nothing, nothing, nothing)
+	e3 = Edge(d, nothing, nothing, nothing, nothing)
+
+	e4 = Edge(d, nothing, nothing, nothing, nothing)
+	e5 = Edge(e.next.origin, nothing, nothing, nothing, nothing)
+	e6 = Edge(a, nothing, nothing, nothing, nothing)
+
+	# Yeni bağlantıları oluşturalım
+	e1.next = e2 ; e2.previous = e1
+	e2.next = e3 ; e3.previous = e2
+	e3.next = e1 ; e1.previous = e3	
+	new_triangle1 = Triangle(e1)
+	e1.face = e2.face = e3.face = new_triangle1
+
+	e4.next = e5 ; e5.previous = e4
+	e5.next = e6 ; e6.previous = e5
+	e6.next = e4 ; e4.previous = e6
+	new_triangle2 = Triangle(e4)
+	e4.face = e5.face = e6.face = new_triangle2
+
+	# Yeni üçgenleri ekleyelim
+	push!(delaunay.triangles, new_triangle1, new_triangle2)
+
+	# reflect kenarlarını güncelleyelim
+	connect_reflect!(delaunay.triangles)
+
+end
+
+function recursive_flip!(e::Edge, delaunay::Delaunay)
+
+	if e.reflect === nothing
+		return
+	end
+
+	if !check_umkreis(e)
+		return
+	end
+
+	flip!(e, delaunay)
+
+	#flip sonrası teni kenarı al
+	t1 = e.face
+	t2 = e.reflect.face
+
+	e1 = t1.edge
+	e2 = e1.next
+	e3 = e2.next
+	
+	f1 = t2.edge
+	f2 = f1.next
+	f3 = f2.next	
+
+	for ed in [e1, e2, e3, f1, f2, f3]
+		recursive_flip!(ed, delaunay)
+	end
+
 end
 
 
 """
-Find the triangle containing point p.
-"""
-function find_triangle(p::Point, D::Delaunay)::Dreieck
-    for tri in D.triangles
-        e = tri.edge
-        pts = [e.origin, e.next.origin, e.prev.origin]
-        if is_in_triangle(Triangle(pts...), p)
-            return tri
-        end
-    end
-    error("Point not inside any triangle")
+println("\n=== DELAUNAY FULL FUNCTION TEST ===")
+
+# Basit dört nokta
+A = Point(0.0, 0.0)
+B = Point(1.0, 0.0)
+C = Point(0.0, 1.0)
+D = Point(1.0, 1.0)
+
+# İlk üçgen ABC
+e1 = Edge(A, nothing, nothing, nothing, nothing)
+e2 = Edge(B, nothing, nothing, nothing, nothing)
+e3 = Edge(C, nothing, nothing, nothing, nothing)
+e1.next = e2; e2.previous = e1
+e2.next = e3; e3.previous = e2
+e3.next = e1; e1.previous = e3
+tri1 = Triangle(e1)
+e1.face = e2.face = e3.face = tri1
+
+# İkinci üçgen B-C-D (BC ortak kenar)
+f1 = Edge(B, nothing, nothing, nothing, nothing)
+f2 = Edge(D, nothing, nothing, nothing, nothing)
+f3 = Edge(C, nothing, nothing, nothing, nothing)
+f1.next = f2; f2.previous = f1
+f2.next = f3; f3.previous = f2
+f3.next = f1; f1.previous = f3
+tri2 = Triangle(f1)
+f1.face = f2.face = f3.face = tri2
+
+# Triangle kümesi ve Delaunay yapısı
+triangles = Set{Triangle}()
+push!(triangles, tri1)
+push!(triangles, tri2)
+delaunay = Delaunay(triangles, tri1)
+
+# Reflect bağlantılarını kur
+connect_reflect!(delaunay.triangles)
+println("Reflect connections set.")
+
+# B noktasının biraz üstüne nokta ekleyelim ki flip kesin olsun
+P = Point(0.3, 0.3)
+println("Inserting point ", P)
+
+# insert_point! hepsini tetikleyecek
+insert_point!(P, delaunay)
+
+println("After insertion, triangle count: ", length(delaunay.triangles))
+
+# Yeni üçgenleri yazdır
+for t in delaunay.triangles
+    p1 = t.edge.origin
+    p2 = t.edge.next.origin
+    p3 = t.edge.next.next.origin
+    println("Triangle: ", p1, " - ", p2, " - ", p3)
 end
 
+println("=== DELAUNAY FULL FUNCTION TEST COMPLETED ===")
 """
-Insert point p into the triangulation D.
-"""
-function insert_point!(p::Point, D::Delaunay)
-    # 1. Find containing triangle
-    tri = find_triangle(p, D)
-    e1 = tri.edge
-    e2 = e1.next
-    e3 = e1.prev
-
-    # 2. Remove old triangle
-    delete!(D.triangles, tri)
-
-    # 3. Create new edges from triangle vertices to p (and their twins)
-    ep1 = Kante(e1.origin, nothing, nothing, nothing, nothing)
-    ep1_twin = Kante(p, ep1, nothing, nothing, nothing)
-    ep1.twin = ep1_twin
-    ep1_twin.twin = ep1
-
-    ep2 = Kante(e2.origin, nothing, nothing, nothing, nothing)
-    ep2_twin = Kante(p, ep2, nothing, nothing, nothing)
-    ep2.twin = ep2_twin
-    ep2_twin.twin = ep2
-
-    ep3 = Kante(e3.origin, nothing, nothing, nothing, nothing)
-    ep3_twin = Kante(p, ep3, nothing, nothing, nothing)
-    ep3.twin = ep3_twin
-    ep3_twin.twin = ep3
-
-    # 4. Build three new triangles:
-    # Triangle 1: (e1.origin, e2.origin, p)
-    # Edges: e1, ep1_twin, ep2
-    t1_e1 = e1
-    t1_e2 = ep1_twin
-    t1_e3 = ep2
-
-    t1_e1.next = t1_e2
-    t1_e2.next = t1_e3
-    t1_e3.next = t1_e1
-
-    t1_e1.prev = t1_e3
-    t1_e2.prev = t1_e1
-    t1_e3.prev = t1_e2
-
-    # Triangle 2: (e2.origin, e3.origin, p)
-    # Edges: e2, ep2_twin, ep3
-    t2_e1 = e2
-    t2_e2 = ep2_twin
-    t2_e3 = ep3
-
-    t2_e1.next = t2_e2
-    t2_e2.next = t2_e3
-    t2_e3.next = t2_e1
-
-    t2_e1.prev = t2_e3
-    t2_e2.prev = t2_e1
-    t2_e3.prev = t2_e2
-
-    # Triangle 3: (e3.origin, e1.origin, p)
-    # Edges: e3, ep3_twin, ep1
-    t3_e1 = e3
-    t3_e2 = ep3_twin
-    t3_e3 = ep1
-
-    t3_e1.next = t3_e2
-    t3_e2.next = t3_e3
-    t3_e3.next = t3_e1
-
-    t3_e1.prev = t3_e3
-    t3_e2.prev = t3_e1
-    t3_e3.prev = t3_e2
-
-    # 5. Assign face references
-    tri1 = Dreieck(t1_e1)
-    tri2 = Dreieck(t2_e1)
-    tri3 = Dreieck(t3_e1)
-
-    for ed in (t1_e1, t1_e2, t1_e3)
-        ed.face = tri1
-    end
-    for ed in (t2_e1, t2_e2, t2_e3)
-        ed.face = tri2
-    end
-    for ed in (t3_e1, t3_e2, t3_e3)
-        ed.face = tri3
-    end
-
-    # 6. Update twins for old edges if necessary (they remain unchanged)
-    # Twins for ep1, ep2, ep3 and their twins are already set
-
-    # 7. Add new triangles
-    push!(D.triangles, tri1)
-    push!(D.triangles, tri2)
-    push!(D.triangles, tri3)
-
-    # 8. Recursively flip edges opposite to p to enforce Delaunay condition
-    recursive_flip!(t1_e1, D)
-    recursive_flip!(t2_e1, D)
-    recursive_flip!(t3_e1, D)
-end
