@@ -1,57 +1,34 @@
-"""
-Purpose:
-Core Doubly Connected Edge List and Delaunay triangulation data structures.
-Contents:
+module DCEL
 
-abstract type Face end
+export Point, Face, Edge, Triangle, Delaunay
 
-mutable struct Kante
-
-origin::Point
-
-twin::Kante
-
-next::Kante
-
-prev::Kante
-
-face::Face
-
-mutable struct Dreieck <: Face
-
-edge::Kante
-
-mutable struct Delaunay
-
-triangles::Set{Dreieck}
-
-bounding_triangle::Dreieck
-"""
-
+# Basic Point type
 struct Point
     x::Float64
     y::Float64
 end
 
-# Abstract Face type
+# Abstract face type for polymorphism
 abstract type Face end
 
-# Forward declaration to allow mutual references
-mutable struct Kante
+# Edge type: directed half-edge
+mutable struct Edge
     origin::Point
-    twin::Kante
-    next::Kante
-    prev::Kante
+    twin::Edge
+    next::Edge
+    prev::Edge
     face::Face
 end
 
-# Triangle inheriting from Face
-mutable struct Dreieck <: Face
-    edge::Kante   # One of its 3 edges; others accessible via .next
+# Triangle face
+mutable struct Triangle <: Face
+    edge::Edge  # One of the three edges; next/prev traverse the triangle
 end
 
-# Container for the triangulation
+# Delaunay triangulation structure
 mutable struct Delaunay
-    triangles::Set{Dreieck}
-    bounding_triangle::Dreieck
+    triangles::Set{Triangle}
+    bounding_triangle::Triangle
 end
+
+end # module

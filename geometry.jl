@@ -1,6 +1,3 @@
-"""
-
-"""
 struct Point
 	x::Float64
 	y::Float64
@@ -16,7 +13,7 @@ import Base: +
 import Base: -
 import Base: *
 
-function +(A::Point, p2::Point)
+function +(A::Point, B::Point)
     return Point(A.x+B.x, A.y+B.y)
 end
 

@@ -107,21 +107,37 @@ function flip!(e::Kante, D::Delaunay)
     end
 
     # Reconnect twins:
-    # e1 (a->c) twin of e.prev.twin
-    e1.twin = e.prev.twin
-    e1.twin.twin = e1
+    # e1 (a->c) twin of e.prev.twin, if exists
+    if e.prev !== nothing && e.prev.twin !== nothing
+        e1.twin = e.prev.twin
+        e1.twin.twin = e1
+    else
+        e1.twin = nothing
+    end
 
-    # e2 (c->d) twin of e.twin.next.twin
-    e2.twin = e.twin.next.twin
-    e2.twin.twin = e2
+    # e2 (c->d) twin of e.twin.next.twin, if exists
+    if e.twin.next !== nothing && e.twin.next.twin !== nothing
+        e2.twin = e.twin.next.twin
+        e2.twin.twin = e2
+    else
+        e2.twin = nothing
+    end
 
-    # e3 (d->c) twin of e.next.twin
-    e3.twin = e.next.twin
-    e3.twin.twin = e3
+    # e3 (d->c) twin of e.next.twin, if exists
+    if e.next !== nothing && e.next.twin !== nothing
+        e3.twin = e.next.twin
+        e3.twin.twin = e3
+    else
+        e3.twin = nothing
+    end
 
-    # e4 (c->b) twin of e.twin.prev.twin
-    e4.twin = e.twin.prev.twin
-    e4.twin.twin = e4
+    # e4 (c->b) twin of e.twin.prev.twin, if exists
+    if e.twin.prev !== nothing && e.twin.prev.twin !== nothing
+        e4.twin = e.twin.prev.twin
+        e4.twin.twin = e4
+    else
+        e4.twin = nothing
+    end
 
     # Add new triangles
     push!(D.triangles, tri_new1)
@@ -133,6 +149,9 @@ end
 Recursively enforce the Delaunay condition along the new edges.
 """
 function recursive_flip!(e::Kante, D::Delaunay)
+    if e === nothing || e.twin === nothing
+        return
+    end
     if check_umkreis(e)
         # Save references to edges that will be adjacent to the new diagonal
         e_twin_next = e.twin.next
@@ -173,32 +192,29 @@ function insert_point!(p::Point, D::Delaunay)
     # 2. Remove old triangle
     delete!(D.triangles, tri)
 
-    # 3. Create new edges
-    # For each edge, we create 2 edges: one from the old edge's origin to p, and its twin
-    # We'll also create the edges of each triangle
-
-    # New edges connecting p to the triangle corners
+    # 3. Create new edges from triangle vertices to p (and their twins)
     ep1 = Kante(e1.origin, nothing, nothing, nothing, nothing)
     ep1_twin = Kante(p, ep1, nothing, nothing, nothing)
     ep1.twin = ep1_twin
+    ep1_twin.twin = ep1
 
     ep2 = Kante(e2.origin, nothing, nothing, nothing, nothing)
     ep2_twin = Kante(p, ep2, nothing, nothing, nothing)
     ep2.twin = ep2_twin
+    ep2_twin.twin = ep2
 
     ep3 = Kante(e3.origin, nothing, nothing, nothing, nothing)
     ep3_twin = Kante(p, ep3, nothing, nothing, nothing)
     ep3.twin = ep3_twin
+    ep3_twin.twin = ep3
 
-    # Edges opposite p are the original edges
-    # We re-use them but must set their .face pointer later
-
-    # Triangle 1: e1, ep1_twin, ep2
+    # 4. Build three new triangles:
+    # Triangle 1: (e1.origin, e2.origin, p)
+    # Edges: e1, ep1_twin, ep2
     t1_e1 = e1
     t1_e2 = ep1_twin
     t1_e3 = ep2
 
-    # Link next/prev
     t1_e1.next = t1_e2
     t1_e2.next = t1_e3
     t1_e3.next = t1_e1
@@ -207,7 +223,8 @@ function insert_point!(p::Point, D::Delaunay)
     t1_e2.prev = t1_e1
     t1_e3.prev = t1_e2
 
-    # Triangle 2: e2, ep2_twin, ep3
+    # Triangle 2: (e2.origin, e3.origin, p)
+    # Edges: e2, ep2_twin, ep3
     t2_e1 = e2
     t2_e2 = ep2_twin
     t2_e3 = ep3
@@ -220,7 +237,8 @@ function insert_point!(p::Point, D::Delaunay)
     t2_e2.prev = t2_e1
     t2_e3.prev = t2_e2
 
-    # Triangle 3: e3, ep3_twin, ep1
+    # Triangle 3: (e3.origin, e1.origin, p)
+    # Edges: e3, ep3_twin, ep1
     t3_e1 = e3
     t3_e2 = ep3_twin
     t3_e3 = ep1
@@ -233,30 +251,31 @@ function insert_point!(p::Point, D::Delaunay)
     t3_e2.prev = t3_e1
     t3_e3.prev = t3_e2
 
-    # Create triangle objects
+    # 5. Assign face references
     tri1 = Dreieck(t1_e1)
     tri2 = Dreieck(t2_e1)
     tri3 = Dreieck(t3_e1)
 
-    # Assign face references
-    for e in [t1_e1, t1_e2, t1_e3]
-        e.face = tri1
+    for ed in (t1_e1, t1_e2, t1_e3)
+        ed.face = tri1
     end
-    for e in [t2_e1, t2_e2, t2_e3]
-        e.face = tri2
+    for ed in (t2_e1, t2_e2, t2_e3)
+        ed.face = tri2
     end
-    for e in [t3_e1, t3_e2, t3_e3]
-        e.face = tri3
+    for ed in (t3_e1, t3_e2, t3_e3)
+        ed.face = tri3
     end
 
-    # 4. Add new triangles to D
+    # 6. Update twins for old edges if necessary (they remain unchanged)
+    # Twins for ep1, ep2, ep3 and their twins are already set
+
+    # 7. Add new triangles
     push!(D.triangles, tri1)
     push!(D.triangles, tri2)
     push!(D.triangles, tri3)
 
-    # 5. For each edge opposite p, call recursive_flip!
+    # 8. Recursively flip edges opposite to p to enforce Delaunay condition
     recursive_flip!(t1_e1, D)
     recursive_flip!(t2_e1, D)
     recursive_flip!(t3_e1, D)
 end
-
