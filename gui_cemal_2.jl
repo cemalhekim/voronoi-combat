@@ -21,7 +21,9 @@ function start_game()
                         xpanlock = true,
                         ypanlock = true,
                         xzoomlock = true,
-                        yzoomlock = true
+                        yzoomlock = true,
+                        xrectzoom = false,
+                        yrectzoom = false
                     )
 
     #leere Listen von "Observable" Punkten
