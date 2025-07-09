@@ -29,31 +29,32 @@ function get_delaunay_triangulation(V::Vector{T}) where T<:geometry.Face
 	return dreiecke
 end
 
-function clip_by_bisector(poly::Vector{Point2f}, p1::Point2f, p2::Point2f)
-    a = p2[1] - p1[1]
-    b = p2[2] - p1[2]
-    c = (p2[1]^2 - p1[1]^2 + p2[2]^2 - p1[2]^2) / 2.0
-    newpoly = Point2f[]
-    S = poly[end]
-    for E in poly
-        val_s = a*S[1] + b*S[2] - c
-        val_e = a*E[1] + b*E[2] - c
-        s_in = val_s <= 0
-        e_in = val_e <= 0
-        if s_in != e_in
-            t = val_s / (val_s - val_e)
-            inter = Point2f(S[1] + t*(E[1]-S[1]), S[2] + t*(E[2]-S[2]))
-            push!(newpoly, inter)
-        end
-        if e_in
-            push!(newpoly, E)
-        end
-        S = E
-    end
-    return newpoly
-end
+function voronoi(P::Point2f, all_sites::Vector{Point2f}, bounds)
+	
+	function clip_by_bisector(poly::Vector{Point2f}, p1::Point2f, p2::Point2f)
+		a = p2[1] - p1[1]
+		b = p2[2] - p1[2]
+		c = (p2[1]^2 - p1[1]^2 + p2[2]^2 - p1[2]^2) / 2.0
+		newpoly = Point2f[]
+		S = poly[end]
+		for E in poly
+			val_s = a*S[1] + b*S[2] - c
+			val_e = a*E[1] + b*E[2] - c
+			s_in = val_s <= 0
+			e_in = val_e <= 0
+			if s_in != e_in
+				t = val_s / (val_s - val_e)
+				inter = Point2f(S[1] + t*(E[1]-S[1]), S[2] + t*(E[2]-S[2]))
+				push!(newpoly, inter)
+			end
+			if e_in
+				push!(newpoly, E)
+			end
+			S = E
+		end
+		return newpoly
+	end
 
-function calculate_clipped_cell(P::Point2f, all_sites::Vector{Point2f}, bounds)
     xmin, ymin, xmax, ymax = bounds
     cell = [Point2f(xmin, ymin), Point2f(xmax, ymin), Point2f(xmax, ymax), Point2f(xmin, ymax)]
     for Q in all_sites
@@ -79,6 +80,7 @@ function polygon_area(poly::Vector{Point2f})
 end
 
 function start_game()
+	game_finished = Ref(false)
 	GLMakie.activate!(vsync=false, visible=true)
 	
 	xmin=-1.
@@ -132,6 +134,9 @@ function start_game()
 	#Mausklick-Event
 	on(ax.scene.events.mousebutton) do ev
 		if ev.button==Mouse.left && ev.action==Mouse.press
+			if game_finished[]
+				return  # Oyun bittiyse tıklama alma
+			end
 			mpos=ax.scene.events.mouseposition[]
 			rect=ax.scene.viewport[]
 			local_px=Point2f(mpos .- rect.origin)
@@ -196,23 +201,23 @@ function start_game()
 			bounds = (xmin, ymin, xmax, ymax)
 
 			for P in pos_player_1
-				clipped = calculate_clipped_cell(P, all_sites, bounds)
+				clipped = voronoi(P, all_sites, bounds)
 				push!(current_plot[], poly!(ax, clipped; color=:red, transparency=true, alpha=0.3))
 			end
 			for P in pos_player_2
-				clipped = calculate_clipped_cell(P, all_sites, bounds)
+				clipped = voronoi(P, all_sites, bounds)
 				push!(current_plot[], poly!(ax, clipped; color=:blue, transparency=true, alpha=0.3))
 			end
 
 			# (İsteğe Bağlı) Alanları yazdır
 			if length(all_sites) > 1
 				area1 = sum(p -> begin
-					clipped = calculate_clipped_cell(p, all_sites, bounds)
+					clipped = voronoi(p, all_sites, bounds)
 					isempty(clipped) ? 0.0 : polygon_area(clipped)
 				end, pos_player_1)
 
 				area2 = sum(p -> begin
-					clipped = calculate_clipped_cell(p, all_sites, bounds)
+					clipped = voronoi(p, all_sites, bounds)
 					isempty(clipped) ? 0.0 : polygon_area(clipped)
 				end, pos_player_2)
 			else
@@ -220,6 +225,24 @@ function start_game()
 				area2 = 0.0
 			end
 			@info "Alanlar -> Oyuncu 1: $(round(area1, digits=2)), Oyuncu 2: $(round(area2, digits=2))"
+			k = 4  # Her oyuncuya 4 hamle
+			if click_count == 2k && !game_finished[]
+				winner_text = area1 > area2 ? "Player 1 Won! Congrats!" :
+							(area2 > area1 ? "Player 2 Won! Congrats!" : "It's a Draw!")
+
+				msg = "Game Finished!\n" *
+					"Player 1 Score: $(round(area1, digits=2))\n" *
+					"Player 2 Score: $(round(area2, digits=2))\n\n" *
+					winner_text
+
+				push!(current_plot[], text!(ax, Point2f(0, 1.1),
+					text = msg,
+					align = (:center, :top),
+					color = :black,
+					fontsize = 30))
+
+				game_finished[] = true
+			end
 		end
 	end
 	
