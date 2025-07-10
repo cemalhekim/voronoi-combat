@@ -1,18 +1,37 @@
+## Voronoi Combat - Geometry Module
+# This module implements the core geometric structures and algorithms for the Voronoi Combat game.
+# It includes definitions for points, edges, triangles, and the Delaunay triangulation.
+# The module provides functions to initialize the Delaunay triangulation, insert points, check circumcircles,
+# and perform edge flips. It also includes utility functions for geometric operations and conversions.
+
 module geometry
 
+# ==== EXPORTS ====
+# Exported types and functions for external use
 export Point, Edge, Triangle, Delaunay, initialize_delaunay, insert_point!,
        get_vertices_of_triangle, create_super_triangle
 
+# ==== IMPORTS ====
+# Import necessary packages
 using LinearAlgebra
 using GLMakie: Point2f
 
 # ==== TYPES ====
+
+# Define geometric types used in the Delaunay triangulation
+# Point represents a 2D point with x and y coordinates.
 struct Point
     x::Float64
     y::Float64
 end
 
+# Face is an abstract type representing a face in the triangulation.
+# It is used to define the structure of triangles in the Delaunay triangulation.
 abstract type Face end
+
+# Edge represents an edge in the triangulation, connecting two points.
+# It has references to its origin point, previous and next edges, the face it belongs to,
+# and its twin edge (the edge that connects to the same points but in the opposite direction).
 mutable struct Edge
     origin::Point
     prev::Union{Edge, Nothing}
@@ -21,31 +40,50 @@ mutable struct Edge
     twin::Union{Edge, Nothing}
 end
 
+# Triangle represents a triangle in the triangulation, which is defined by one of its edges.
+# It inherits from the Face type.
+# Each triangle has a reference to one of its edges, which is used to traverse the triangle
 mutable struct Triangle <: Face
     edge::Edge
 end
 
+# Delaunay represents the Delaunay triangulation structure.
+# It contains a vector of triangles and a set of super vertices (points that form the super triangle).
+# The super triangle is a large triangle that encompasses all points in the triangulation,
+# ensuring that all points can be inserted into the triangulation without issues.
 mutable struct Delaunay
     triangles::Vector{Triangle}
     super_vertices::Set{Point}
 end
 
 # ==== OPERATORS ====
+
+# Define operators for Point type to allow arithmetic operations and comparisons
 import Base: +, -, *, ==
 
+# Define arithmetic operations for Point
+# Addition, subtraction, scalar multiplication, and equality check
 +(a::Point, b::Point) = Point(a.x + b.x, a.y + b.y)
 -(a::Point, b::Point) = Point(a.x - b.x, a.y - b.y)
 *(λ::Float64, p::Point) = Point(λ * p.x, λ * p.y)
 ==(a::Point, b::Point) = isapprox(a.x, b.x; atol=1e-10) && isapprox(a.y, b.y; atol=1e-10)
 
 # ==== UTIL ====
+
+# Define a cross product function for Point type
+# This function computes the cross product of two points treated as vectors.
 cross(a::Point, b::Point) = a.x * b.y - a.y * b.x
 
 # ==== CONVERSIONS ====
+
+# Define conversion functions to convert between Point and Point2f types
+# Point2f is a type used in GLMakie for 2D points with Float64 coordinates.
 function to_point2f(p::Point)
     return Point2f(p.x, p.y)
 end
 
+# Convert a Point2f to a Point
+# This function extracts the x and y coordinates from a Point2f and creates a Point.
 function to_point(p::AbstractVector{<:Real})
     return Point(p[1], p[2])
 end
