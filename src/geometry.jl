@@ -89,6 +89,18 @@ function to_point(p::AbstractVector{<:Real})
 end
 
 # ==== GEOMETRY CORE ====
+
+"""
+    in_triangle(p::Point, tri::Triangle) -> Bool
+
+Checks whether a point `p` lies inside or on the boundary of the triangle `tri`.
+
+The function computes the cross products of vectors formed between the triangle's edges
+and the point `p`, and uses their signs to determine if `p` is inside the triangle
+or on one of its edges.
+
+Returns `true` if the point is inside or exactly on the triangle boundary, `false` otherwise.
+"""
 function in_triangle(p::Point, tri::Triangle)
     a = tri.edge.origin
     b = tri.edge.next.origin
