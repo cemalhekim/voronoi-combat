@@ -9,7 +9,7 @@ module geometry
 # ==== EXPORTS ====
 # Exported types and functions for external use
 export Point, Edge, Triangle, Delaunay, initialize_delaunay, insert_point!,
-       get_vertices_of_triangle, create_super_triangle
+        create_super_triangle
 
 # ==== IMPORTS ====
 # Import necessary packages
@@ -244,13 +244,6 @@ function insert_point!(p::Point, D::Delaunay)
     recursive_flip!(e_ab, D)
     recursive_flip!(e_bc, D)
     recursive_flip!(e_ca, D)
-end
-
-function get_vertices_of_triangle(tri::Triangle)
-    a = tri.edge.origin
-    b = tri.edge.next.origin
-    c = tri.edge.prev.origin
-    return (a, b, c)
 end
 
 end # module geometry
