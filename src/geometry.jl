@@ -9,7 +9,7 @@ module geometry
 # ==== EXPORTS ====
 # Exported types and functions for external use
 export Point, Edge, Triangle, Delaunay, initialize_delaunay, insert_point!,
-        create_super_triangle
+       get_vertices_of_triangle, create_super_triangle
 
 # ==== IMPORTS ====
 # Import necessary packages
@@ -69,6 +69,15 @@ import Base: +, -, *, ==
 ==(a::Point, b::Point) = isapprox(a.x, b.x; atol=1e-10) && isapprox(a.y, b.y; atol=1e-10)
 
 # ==== UTIL ====
+"""
+    cross(a::Point, b::Point) -> Float64
+
+Berechnet das Kreuzprodukt (auch: Zweidimensionales Vektorprodukt) zweier `Point`-Objekte.
+
+Dies ist insbesondere nützlich zur Bestimmung von Orientierungen und zur Punkt-in-Dreieck-Prüfung.
+
+Gibt den Skalarwert `a.x * b.y - a.y * b.x` zurück.
+"""
 
 # Define a cross product function for Point type
 # This function computes the cross product of two points treated as vectors.
@@ -76,12 +85,15 @@ cross(a::Point, b::Point) = a.x * b.y - a.y * b.x
 
 # ==== CONVERSIONS ====
 
-# Define conversion functions to convert between Point and Point2f types
-# Point2f is a type used in GLMakie for 2D points with Float64 coordinates.
-function to_point2f(p::Point)
-    return Point2f(p.x, p.y)
-end
+"""
+    to_point(v::AbstractVector{<:Real}) -> Point
 
+Konvertiert einen 2D-Vektor (z. B. `Point2f` oder `Vector{Float64}`) in ein `Point`-Objekt.
+
+Erwartet ein Array mit mindestens zwei Elementen, die die `x`- und `y`-Koordinaten enthalten.
+
+Beispiel: `to_point([1.0, 2.0]) == Point(1.0, 2.0)`
+"""
 # Convert a Point2f to a Point
 # This function extracts the x and y coordinates from a Point2f and creates a Point.
 function to_point(p::AbstractVector{<:Real})
@@ -113,6 +125,17 @@ function in_triangle(p::Point, tri::Triangle)
     return (sign(cp1) == sign(cp2) && sign(cp2) == sign(cp3)) || (cp1 ≈ 0 || cp2 ≈ 0 || cp3 ≈ 0)
 end
 
+"""
+    check_circumcircle(e::Edge, D::Delaunay) -> Bool
+
+Überprüft, ob der Punkt gegenüber der Kante `e` im Inneren des Umkreises des zugehörigen Dreiecks liegt.
+
+Dies ist die zentrale Bedingung der Delaunay-Triangulierung: Kein Punkt darf im Umkreis eines existierenden Dreiecks liegen.
+
+Falls `e` keine Gegenkante (`twin`) besitzt oder eine der vier beteiligten Ecken ein Super-Vertex ist, wird `false` zurückgegeben.
+
+Gibt `true` zurück, wenn ein Edge-Flip notwendig ist.
+"""
 function check_circumcircle(e::Edge, D::Delaunay)::Bool
     if e.twin === nothing return false end
 
@@ -133,6 +156,15 @@ function check_circumcircle(e::Edge, D::Delaunay)::Bool
     return det(M) > 0
 end
 
+"""
+    flip!(e::Edge, D::Delaunay)
+
+Führt einen Edge-Flip entlang der Kante `e` durch.
+
+Zwei angrenzende Dreiecke, die `e` gemeinsam haben, werden durch zwei neue Dreiecke ersetzt, sodass die Kante `e` verschwindet und eine neue Kante zwischen den gegenüberliegenden Punkten eingeführt wird.
+
+Dabei wird die Delaunay-Triangulierung `D` in-place aktualisiert.
+"""
 function flip!(e::Edge, D::Delaunay)
     e12, e21 = e, e.twin
     t1, t2 = e12.face, e21.face
@@ -164,6 +196,15 @@ function flip!(e::Edge, D::Delaunay)
     push!(D.triangles, tnew1, tnew2)
 end
 
+"""
+    recursive_flip!(e::Edge, D::Delaunay)
+
+Überprüft rekursiv, ob die Delaunay-Bedingung entlang der Kante `e` verletzt ist, und führt gegebenenfalls einen Edge-Flip aus.
+
+Wird typischerweise nach dem Einfügen eines neuen Punkts aufgerufen, um sicherzustellen, dass die gesamte Triangulierung gültig bleibt.
+
+Modifiziert `D` direkt.
+"""
 function recursive_flip!(e::Edge, D::Delaunay)
     if e.twin === nothing return end
     if check_circumcircle(e, D)
@@ -174,6 +215,15 @@ function recursive_flip!(e::Edge, D::Delaunay)
     end
 end
 
+"""
+    initialize_delaunay(w::Float64, h::Float64) -> Delaunay
+
+Initialisiert eine Delaunay-Triangulierung mit einem großen äußeren Dreieck, das das Rechteck `[0, w] × [0, h]` vollständig umschließt.
+
+Diese Funktion dient als Ausgangspunkt für die inkrementelle Einfügung neuer Punkte.
+
+Gibt ein `Delaunay`-Objekt mit einem initialen Dreieck und den zugehörigen Superpunkten zurück.
+"""
 function initialize_delaunay(w::Float64, h::Float64)
     p1 = Point(0.0, 2h)
     p2 = Point(-2w, -h)
@@ -201,12 +251,28 @@ function initialize_delaunay(w::Float64, h::Float64)
     return Delaunay([tri], Set([p1, p2, p3]))
 end
 
+"""
+    create_super_triangle(xmin, xmax, ymin, ymax) -> Triangle
+
+Erstellt ein großes äußeres Dreieck (Super-Triangle), das das Rechteck `[xmin, xmax] × [ymin, ymax]` vollständig überdeckt.
+
+Gibt das erzeugte `Triangle`-Objekt zurück. Diese Funktion ist nützlich, um das Spielgebiet zu initialisieren.
+"""
 function create_super_triangle(xmin::Float64, xmax::Float64, ymin::Float64, ymax::Float64)
     w = xmax - xmin
     h = ymax - ymin
     return initialize_delaunay(w, h).triangles[1]
 end
 
+"""
+    insert_point!(p::Point, D::Delaunay)
+
+Fügt den Punkt `p` in die bestehende Delaunay-Triangulierung `D` ein.
+
+Dabei wird das Dreieck gefunden, das `p` enthält, in drei neue Dreiecke unterteilt und rekursives Kanten-Flipping durchgeführt, um die Delaunay-Bedingung zu erhalten.
+
+Ändert die Triangulierung `D` in-place.
+"""
 function insert_point!(p::Point, D::Delaunay)
     t_old = findfirst(tri -> in_triangle(p, tri), D.triangles)
     if t_old === nothing return end
